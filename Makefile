@@ -52,7 +52,7 @@ update:
 
 .PHONY: verify
 verify: unit-test
-	hack/verify-all.sh
+	hack/verify-golint.sh
 
 .PHONY: unit-test
 unit-test:
