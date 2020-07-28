@@ -29,7 +29,7 @@ sudo minikube start --profile=minikube --vm-driver=none --kubernetes-version=$KU
 minikube update-context --profile=minikube
 sudo chown -R travis: /home/travis/.minikube/
 
-# setup samba server and deploy SMB CSI driver
+# setup samba server and install SMB CSI driver via helm
 kubectl cluster-info
 JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}'; until kubectl -n kube-system get pods -lk8s-app=kube-dns -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do sleep 1;echo "waiting for kube-dns to be available";  done
 kubectl create secret generic smbcreds --from-literal username=USERNAME --from-literal password="PASSWORD"

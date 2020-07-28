@@ -41,7 +41,7 @@ const (
 	kubeconfigEnvVar  = "KUBECONFIG"
 	reportDirEnv      = "ARTIFACTS"
 	testWindowsEnvVar = "TEST_WINDOWS"
-	defaultReportDir  = "/workspace/_artifacts"
+	defaultReportDir  = "test/e2e"
 )
 
 var (
