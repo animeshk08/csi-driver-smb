@@ -12,15 +12,17 @@ This driver allows Kubernetes to use [SMB](https://wiki.wireshark.org/SMB) CSI v
 |SMB CSI Driver Version  | Image                                        | 1.14+  |
 |------------------------|----------------------------------------------|--------|
 |master branch           |mcr.microsoft.com/k8s/csi/smb-csi:latest      | yes    |
+|v0.2.0                  |mcr.microsoft.com/k8s/csi/smb-csi:v0.2.0      | yes    |
 |v0.1.0                  |mcr.microsoft.com/k8s/csi/smb-csi:v0.1.0      | yes    |
 
 ### Driver parameters
 Please refer to [`smb.csi.k8s.io` driver parameters](./docs/driver-parameters.md)
 
-### Install smb CSI driver on a kubernetes cluster
-Please refer to [install smb csi driver](./docs/install-csi-driver-master.md)
+### Install SMB CSI driver on a kubernetes cluster
+Please refer to [install SMB CSI driver](./docs/install-smb-csi-driver.md)
 
 ### Examples
+ - [Set up a Samba Server on a Kubernetes cluster](./deploy/example/smb-provisioner/)
  - [Basic usage](./deploy/example/e2e_usage.md)
  - [Windows](./deploy/example/windows)
 

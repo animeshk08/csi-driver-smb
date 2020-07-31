@@ -28,7 +28,7 @@ import (
 	"github.com/kubernetes-csi/csi-driver-smb/pkg/smb"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 func init() {
@@ -67,7 +67,7 @@ func handle() {
 	if driver == nil {
 		klog.Fatalln("Failed to initialize smb CSI Driver")
 	}
-	driver.Run(*endpoint, *kubeconfig)
+	driver.Run(*endpoint, *kubeconfig, false)
 }
 
 func exportMetrics() {

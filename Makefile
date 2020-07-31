@@ -23,11 +23,13 @@ PKG = github.com/kubernetes-csi/csi-driver-smb
 GIT_COMMIT ?= $(shell git rev-parse HEAD)
 REGISTRY ?= andyzhangx
 REGISTRY_NAME = $(shell echo $(REGISTRY) | sed "s/.azurecr.io//g")
-IMAGE_NAME = smb-csi
-IMAGE_VERSION ?= v0.2.0
+IMAGE_NAME ?= smb-csi
+IMAGE_VERSION ?= v0.3.0
 # Use a custom version for E2E tests if we are testing in CI
 ifdef CI
+ifndef PUBLISH
 override IMAGE_VERSION := e2e-$(GIT_COMMIT)
+endif
 endif
 IMAGE_TAG = $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_VERSION)
 IMAGE_TAG_LATEST = $(REGISTRY)/$(IMAGE_NAME):latest
@@ -60,11 +62,11 @@ unit-test:
 
 .PHONY: sanity-test
 sanity-test: smb
-	go test -v -timeout=10m ./test/sanity
+	test/sanity/run-test.sh
 
 .PHONY: integration-test
 integration-test: smb
-	go test -v -timeout=10m ./test/integration
+	sudo -E env "PATH=$$PATH" bash test/integration/run-test.sh
 
 .PHONY: e2e-test
 e2e-test:
@@ -72,16 +74,16 @@ e2e-test:
 
 .PHONY: e2e-bootstrap
 e2e-bootstrap: install-helm
-	docker pull $(IMAGE_TAG) || make smb-container push
+	docker pull $(IMAGE_TAG)
 ifdef TEST_WINDOWS
-	helm install smb-csi-driver charts/latest/smb-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	helm install csi-driver-smb charts/latest/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug \
 		--set image.smb.repository=$(REGISTRY)/$(IMAGE_NAME) \
 		--set image.smb.tag=$(IMAGE_VERSION) \
 		--set windows.enabled=true \
 		--set linux.enabled=false \
 		--set controller.replicas=1
 else
-	helm install smb-csi-driver charts/latest/smb-csi-driver --namespace kube-system --wait --timeout=15m -v=5 --debug \
+	helm install csi-driver-smb charts/latest/csi-driver-smb --namespace kube-system --wait --timeout=15m -v=5 --debug \
 		--set image.smb.repository=$(REGISTRY)/$(IMAGE_NAME) \
 		--set image.smb.tag=$(IMAGE_VERSION) \
 		--set snapshot.enabled=true
@@ -105,7 +107,7 @@ smb-windows:
 
 .PHONY: container	
 container: smb	
-	docker build --no-cache -t $(IMAGE_TAG) -f ./pkg/smbplugin/Dockerfile .
+	docker build --no-cache -t $(IMAGE_TAG) -f ./pkg/smbplugin/dev.Dockerfile .
 
 .PHONY: smb-container
 smb-container:
@@ -116,6 +118,10 @@ ifdef CI
 	az acr build --registry $(REGISTRY_NAME) -t $(IMAGE_TAG)-windows-1809-amd64 -f ./pkg/smbplugin/Windows.Dockerfile --platform windows .
 	docker manifest create $(IMAGE_TAG) $(IMAGE_TAG)-linux-amd64 $(IMAGE_TAG)-windows-1809-amd64
 	docker manifest inspect $(IMAGE_TAG)
+ifdef PUBLISH
+	docker manifest create $(IMAGE_TAG_LATEST) $(IMAGE_TAG)-linux-amd64 $(IMAGE_TAG)-windows-1809-amd64
+	docker manifest inspect $(IMAGE_TAG_LATEST)
+endif	
 else
 ifdef TEST_WINDOWS
 	make smb-windows
@@ -136,8 +142,11 @@ endif
 
 .PHONY: push-latest
 push-latest:
-	docker tag $(IMAGE_TAG) $(IMAGE_TAG_LATEST)
+ifdef CI
+	docker manifest push --purge $(IMAGE_TAG_LATEST)
+else
 	docker push $(IMAGE_TAG_LATEST)
+endif
 
 .PHONY: build-push
 build-push: smb-container

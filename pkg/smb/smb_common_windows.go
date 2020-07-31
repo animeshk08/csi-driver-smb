@@ -21,18 +21,17 @@ package smb
 import (
 	"fmt"
 
-	"k8s.io/klog"
-	"k8s.io/utils/mount"
-
 	"github.com/kubernetes-csi/csi-driver-smb/pkg/mounter"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/mount"
 )
 
-func Mount(m *mount.SafeFormatAndMount, source, target, fsType string, options []string) error {
+func Mount(m *mount.SafeFormatAndMount, source, target, fsType string, options, sensitiveMountOptions []string) error {
 	proxy, ok := m.Interface.(*mounter.CSIProxyMounter)
 	if !ok {
 		return fmt.Errorf("could not cast to csi proxy class")
 	}
-	return proxy.Mount(source, target, fsType, options)
+	return proxy.SMBMount(source, target, fsType, options)
 }
 
 func Unmount(m *mount.SafeFormatAndMount, target string) error {
@@ -40,7 +39,7 @@ func Unmount(m *mount.SafeFormatAndMount, target string) error {
 	if !ok {
 		return fmt.Errorf("could not cast to csi proxy class")
 	}
-	return proxy.Unmount(target)
+	return proxy.SMBUnmount(target)
 }
 
 func RemoveStageTarget(m *mount.SafeFormatAndMount, target string) error {

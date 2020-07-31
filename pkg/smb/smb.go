@@ -21,7 +21,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/mount"
 
 	csicommon "github.com/kubernetes-csi/csi-driver-smb/pkg/csi-common"
@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	DriverName = "smb.csi.k8s.io"
+	DriverName        = "smb.csi.k8s.io"
+	createSubDirField = "createsubdir"
 )
 
 // Driver implements all interfaces of CSI drivers
@@ -49,7 +50,7 @@ func NewDriver(nodeID string) *Driver {
 }
 
 // Run driver initialization
-func (d *Driver) Run(endpoint, kubeconfig string) {
+func (d *Driver) Run(endpoint, kubeconfig string, testMode bool) {
 	versionMeta, err := GetVersionYAML()
 	if err != nil {
 		klog.Fatalf("%v", err)
@@ -62,6 +63,11 @@ func (d *Driver) Run(endpoint, kubeconfig string) {
 	}
 
 	// Initialize default library driver
+	d.AddControllerServiceCapabilities(
+		[]csi.ControllerServiceCapability_RPC_Type{
+			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+		})
+
 	d.AddVolumeCapabilityAccessModes([]csi.VolumeCapability_AccessMode_Mode{
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 		csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
@@ -76,7 +82,7 @@ func (d *Driver) Run(endpoint, kubeconfig string) {
 
 	s := csicommon.NewNonBlockingGRPCServer()
 	// Driver d act as IdentityServer, ControllerServer and NodeServer
-	s.Start(endpoint, d, d, d)
+	s.Start(endpoint, d, d, d, testMode)
 	s.Wait()
 }
 

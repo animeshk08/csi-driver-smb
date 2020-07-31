@@ -21,7 +21,7 @@ if [[ "$#" -gt 0 ]]; then
   ver="$1"
 fi
 
-repo="https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/deploy"
+repo="https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/$ver/deploy"
 if [[ "$#" -gt 1 ]]; then
   if [[ "$2" == *"local"* ]]; then
     echo "use local deploy"
@@ -30,18 +30,13 @@ if [[ "$#" -gt 1 ]]; then
 fi
 
 if [ $ver != "master" ]; then
-	repo="$repo/$ver"
+  repo="$repo/$ver"
 fi
 
 echo "Installing SMB CSI driver, version: $ver ..."
-kubectl apply -f $repo/crd-csi-node-info.yaml
+kubectl apply -f $repo/rbac-csi-smb-controller.yaml
 kubectl apply -f $repo/csi-smb-driver.yaml
+kubectl apply -f $repo/csi-smb-controller.yaml
 kubectl apply -f $repo/csi-smb-node.yaml
-
-if [[ "$#" -gt 1 ]]; then
-  if [[ "$2" == *"windows"* ]]; then
-    echo "install Windows driver ..."
-    kubectl apply -f $repo/csi-smb-node-windows.yaml
-  fi
-fi
+kubectl apply -f $repo/csi-smb-node-windows.yaml
 echo 'SMB CSI driver installed successfully.'

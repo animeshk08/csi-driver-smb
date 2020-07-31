@@ -22,8 +22,17 @@ function cleanup {
   echo 'Deleting CSI sanity test binary'
   rm -rf csi-test
 }
-
 trap cleanup EXIT
+
+function install_csi_sanity_bin {
+  echo 'Installing CSI sanity test binary...'
+  git clone https://github.com/kubernetes-csi/csi-test.git -b v2.2.0
+  pushd csi-test/cmd/csi-sanity
+  make
+  popd
+}
+
+install_csi_sanity_bin
 
 readonly endpoint='unix:///tmp/csi.sock'
 nodeid='CSINode'
@@ -35,12 +44,4 @@ _output/smbplugin --endpoint "$endpoint" --nodeid "$nodeid" -v=5 &
 
 echo 'Begin to run sanity test...'
 readonly CSI_SANITY_BIN='csi-test/cmd/csi-sanity/csi-sanity'
-"$CSI_SANITY_BIN" --ginkgo.v --ginkgo.noColor --csi.endpoint="$endpoint" --ginkgo.skip='should fail when the volume source snapshot is not found|should work'
-
-testvolumeparameters='/tmp/vhd.yaml'
-cat > $testvolumeparameters << EOF
-fstype: ext4
-EOF
-
-echo 'Begin to run sanity test for vhd disk feature...'
-"$CSI_SANITY_BIN" --ginkgo.v --ginkgo.noColor --csi.endpoint="$endpoint" --csi.testvolumeparameters="$testvolumeparameters" --ginkgo.skip='should fail when the volume source snapshot is not found|should work'
+"$CSI_SANITY_BIN" --ginkgo.v --ginkgo.noColor --csi.endpoint="$endpoint" --ginkgo.skip='ValidateVolumeCapabilities|ControllerGetCapabilities|should work|create a volume with already existing name and different capacity'

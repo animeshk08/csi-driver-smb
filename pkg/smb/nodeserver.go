@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -28,8 +29,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/volume/util"
+	"k8s.io/klog/v2"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,7 +38,11 @@ import (
 )
 
 const (
-	sourceField = "source"
+	usernameField     = "username"
+	passwordField     = "password"
+	sourceField       = "source"
+	domainField       = "domain"
+	azureFileUserName = "AZURE"
 )
 
 // NodePublishVolume mount the volume from staging to target path
@@ -50,18 +54,15 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
-	if len(req.GetTargetPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
+
+	target := req.GetTargetPath()
+	if len(target) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Target path not provided")
 	}
 
 	source := req.GetStagingTargetPath()
 	if len(source) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
-	}
-
-	target := req.GetTargetPath()
-	if len(target) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path not provided")
 	}
 
 	mountOptions := []string{"bind"}
@@ -80,6 +81,23 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	if err = preparePublishPath(target, d.mounter); err != nil {
 		return nil, fmt.Errorf("prepare publish failed for %s with error: %v", target, err)
+	}
+
+	context := req.GetVolumeContext()
+	var createSubDir string
+	for k, v := range context {
+		switch strings.ToLower(k) {
+		case createSubDirField:
+			createSubDir = v
+		}
+	}
+
+	if strings.EqualFold(createSubDir, "true") {
+		source = filepath.Join(source, req.GetVolumeId())
+		klog.V(2).Infof("NodePublishVolume: createSubDir(%s) MkdirAll(%s)", createSubDir, source)
+		if err := os.MkdirAll(source, 0750); err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("MkdirAll %s failed with error: %v", source, err))
+		}
 	}
 
 	klog.V(2).Infof("NodePublishVolume: mounting %s at %s with mountOptions: %v", source, target, mountOptions)
@@ -126,13 +144,15 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
-	targetPath := req.GetStagingTargetPath()
-	if len(targetPath) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
-	}
+
 	volumeCapability := req.GetVolumeCapability()
 	if volumeCapability == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume capability not provided")
+	}
+
+	targetPath := req.GetStagingTargetPath()
+	if len(targetPath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
 	}
 
 	volumeID := req.GetVolumeId()
@@ -148,27 +168,35 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	var username, password, domain string
 	for k, v := range secrets {
 		switch strings.ToLower(k) {
-		case "username":
-			username = v
-		case "password":
-			password = v
-		case "domain":
-			domain = v
+		case usernameField:
+			username = strings.TrimSpace(v)
+		case passwordField:
+			password = strings.TrimSpace(v)
+		case domainField:
+			domain = strings.TrimSpace(v)
 		}
 	}
 
-	var mountOptions []string
+	var mountOptions, sensitiveMountOptions []string
 	if runtime.GOOS == "windows" {
-		mountOptions = []string{username, password}
+		if strings.Contains(source, ".file.core.") && !strings.HasPrefix(strings.ToUpper(username), azureFileUserName) {
+			// if mount source is Azure File Server, e.g.
+			//    accountname.file.core.windows.net
+			//    accountname.file.core.chinacloudapi.cn
+			//  Add "AZURE\\" before username
+			mountOptions = []string{fmt.Sprintf("%s\\%s", azureFileUserName, username), password}
+		} else {
+			mountOptions = []string{username, password}
+		}
 	} else {
 		if err := os.MkdirAll(targetPath, 0750); err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("MkdirAll %s failed with error: %v", targetPath, err))
 		}
-		options := []string{fmt.Sprintf("username=%s,password=%s", username, password)}
-		mountOptions = util.JoinMountOptions(mountFlags, options)
+		sensitiveMountOptions = []string{fmt.Sprintf("%s=%s,%s=%s", usernameField, username, passwordField, password)}
+		mountOptions = mountFlags
 	}
 	if domain != "" {
-		mountOptions = append(mountOptions, domain)
+		mountOptions = append(mountOptions, fmt.Sprintf("%s=%s", domainField, domain))
 	}
 
 	klog.V(2).Infof("targetPath(%v) volumeID(%v) context(%v) mountflags(%v) mountOptions(%v)",
@@ -185,7 +213,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		}
 		mountComplete := false
 		err = wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
-			err := Mount(d.mounter, source, targetPath, "cifs", mountOptions)
+			err := Mount(d.mounter, source, targetPath, "cifs", mountOptions, sensitiveMountOptions)
 			mountComplete = true
 			return true, err
 		})
@@ -214,7 +242,7 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 
 	klog.V(2).Infof("NodeUnstageVolume: CleanupMountPoint %s", stagingTargetPath)
 	if err := CleanupSMBMountPoint(d.mounter, stagingTargetPath, false); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unmount staing target %q: %v", stagingTargetPath, err)
+		return nil, status.Errorf(codes.Internal, "failed to unmount staging target %q: %v", stagingTargetPath, err)
 	}
 
 	klog.V(2).Infof("NodeUnstageVolume: unmount %s successfully", stagingTargetPath)
